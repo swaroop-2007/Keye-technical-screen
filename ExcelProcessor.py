@@ -18,21 +18,25 @@ client = OpenAI(
 
 # ── Chat function ─────────────────────────────────────────────────────────────
 def chat(message, history):
+    response = None
     try:
         response = w.serving_endpoints.query(
             name=ENDPOINT_NAME,
-            messages=[{"role": "user", "content": message}]
+            messages=[
+                ChatMessage(
+                    role=ChatMessageRole.USER,
+                    content=message
+                )
+            ]
         )
-
-        # Response is a dict — parse it directly
+        # Response is a dict
         if isinstance(response, dict):
             return response["choices"][0]["message"]["content"]
         else:
-            # Fallback for object-style response
             return response.choices[0].message.content
 
     except Exception as e:
-        return f"⚠️ Error: {str(e)}\n\nRaw: {str(response)}"
+        return f"⚠️ Error: {str(e)}"
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 with gr.Blocks(
