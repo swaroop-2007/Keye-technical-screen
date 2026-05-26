@@ -23,9 +23,16 @@ def chat(message, history):
             name=ENDPOINT_NAME,
             messages=[{"role": "user", "content": message}]
         )
-        return response.choices[0].message.content
+
+        # Response is a dict — parse it directly
+        if isinstance(response, dict):
+            return response["choices"][0]["message"]["content"]
+        else:
+            # Fallback for object-style response
+            return response.choices[0].message.content
+
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        return f"⚠️ Error: {str(e)}\n\nRaw: {str(response)}"
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 with gr.Blocks(
