@@ -18,29 +18,14 @@ client = OpenAI(
 
 # ── Chat function ─────────────────────────────────────────────────────────────
 def chat(message, history):
-    """
-    Calls the Supervisor Agent endpoint — same as Playground but in a UI.
-    History is maintained so the agent has full conversation context.
-    """
-    # Build full message history for multi-turn context
-    messages = []
-    for human, assistant in history:
-        messages.append({"role": "user",      "content": human})
-        messages.append({"role": "assistant", "content": assistant})
-    messages.append({"role": "user", "content": message})
-
     try:
-        response = client.chat.completions.create(
-            model=ENDPOINT_NAME,
-            messages=messages,
-            max_tokens=2000,
-            temperature=0.1,
-            stream=False
+        response = w.serving_endpoints.query(
+            name=ENDPOINT_NAME,
+            messages=[{"role": "user", "content": message}]
         )
         return response.choices[0].message.content
-
     except Exception as e:
-        return f"⚠️ Error calling supervisor: {str(e)}\n\nCheck that the endpoint is READY in Serving."
+        return f"⚠️ Error: {str(e)}"
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 with gr.Blocks(
