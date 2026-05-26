@@ -17,36 +17,36 @@ log.info("WorkspaceClient initialized successfully")
 
 ENDPOINT_NAME = "feature-discovery-supervisor"
 
-# ── Chat ──────────────────────────────────────────────────────────────────────
 def chat(message, history):
     log.info(f"Query received: {message}")
-    log.info(f"Calling endpoint: {ENDPOINT_NAME}")
-
     try:
-        log.info("Sending request to supervisor...")
         response = w.serving_endpoints.query(
             name=ENDPOINT_NAME,
             input=[{"role": "user", "content": message}]
         )
-        log.info(f"Response received. Type: {type(response)}")
-        log.info(f"Response keys: {response.keys() if isinstance(response, dict) else 'not a dict'}")
-        log.info(f"Raw response: {str(response)[:500]}")  # first 500 chars
+        log.info(f"Response type: {type(response)}")
 
-        if isinstance(response, dict):
-            if "final_response" in response:
-                log.info("Parsing via final_response key")
-                return response["final_response"]
-            elif "output" in response:
-                log.info("Parsing via output key")
-                return response["output"][0]["content"][0]["text"]
-            else:
-                log.warning(f"Unknown response structure: {list(response.keys())}")
-                return str(response)
+        # Response is a QueryEndpointResponse SDK object
+        # Supervisor Agent returns result in data field
+        if hasattr(response, 'data') and response.data:
+            log.info("Parsing via data field")
+            return str(response.data[0])
+
+        elif hasattr(response, 'predictions') and response.predictions:
+            log.info("Parsing via predictions field")
+            return str(response.predictions[0])
+
+        elif hasattr(response, 'choices') and response.choices:
+            log.info("Parsing via choices field")
+            return response.choices[0].message.content
+
         else:
-            return str(response)
+            # Log full object to see all fields
+            log.warning(f"All fields empty. Full response: {vars(response)}")
+            return f"Response received but empty. Check logs for full response."
 
     except Exception as e:
-        log.error(f"Error calling supervisor: {str(e)}", exc_info=True)
+        log.error(f"Error: {str(e)}")
         return f"⚠️ Error: {str(e)}"
 
 # ── UI ────────────────────────────────────────────────────────────────────────
