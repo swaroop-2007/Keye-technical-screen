@@ -1,40 +1,71 @@
-%%writefile /Workspace/Users/swaroop.udgaonkar@wipro.com/feature-agent-app/app.py
-
-import gradio as gr
-import mlflow
 import os
-from langchain_core.messages import HumanMessage, AIMessage
+import logging
+import gradio as gr
+from databricks.sdk import WorkspaceClient
 
-# ── Load the registered agent from UC ────────────────────────────────────────
-# Databricks Apps injects DATABRICKS_HOST and DATABRICKS_TOKEN automatically
-mlflow.set_registry_uri("databricks-uc")
-
-print("Loading agent from Unity Catalog...")
-agent = mlflow.pyfunc.load_model(
-    "models:/uc_wealthai_dev.feature_agent.feature_discovery_agent/3"
+# ── Logging setup ─────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
-print("Agent loaded ✅")
+log = logging.getLogger(__name__)
 
-# ── Chat function ─────────────────────────────────────────────────────────────
+# ── Init ──────────────────────────────────────────────────────────────────────
+log.info("Starting Feature Discovery Agent app...")
+w = WorkspaceClient()
+log.info("WorkspaceClient initialized successfully")
+
+ENDPOINT_NAME = "feature-discovery-supervisor"
+
+# ── Chat ──────────────────────────────────────────────────────────────────────
 def chat(message, history):
-    """
-    Gradio passes history as list of [user, assistant] pairs.
-    We forward the latest message to the agent and return its response.
-    """
+    log.info(f"Query received: {message}")
+    log.info(f"Calling endpoint: {ENDPOINT_NAME}")
+
     try:
-        response = agent.predict({
-            "messages": [{"role": "user", "content": message}]
-        })
-        return response
+        log.info("Sending request to supervisor...")
+        response = w.serving_endpoints.query(
+            name=ENDPOINT_NAME,
+            input=[{"role": "user", "content": message}]
+        )
+        log.info(f"Response received. Type: {type(response)}")
+        log.info(f"Response keys: {response.keys() if isinstance(response, dict) else 'not a dict'}")
+        log.info(f"Raw response: {str(response)[:500]}")  # first 500 chars
+
+        if isinstance(response, dict):
+            if "final_response" in response:
+                log.info("Parsing via final_response key")
+                return response["final_response"]
+            elif "output" in response:
+                log.info("Parsing via output key")
+                return response["output"][0]["content"][0]["text"]
+            else:
+                log.warning(f"Unknown response structure: {list(response.keys())}")
+                return str(response)
+        else:
+            return str(response)
+
     except Exception as e:
-        return f"⚠️ Agent error: {str(e)}\n\nTry rephrasing your ML objective."
+        log.error(f"Error calling supervisor: {str(e)}", exc_info=True)
+        return f"⚠️ Error: {str(e)}"
 
 # ── UI ────────────────────────────────────────────────────────────────────────
-with gr.Blocks(
-    title="Feature Discovery Agent",
-    theme=gr.themes.Base(
-        primary_hue="blue",
-        neutral_hue="slate",
+demo = gr.ChatInterface(
+    fn=chat,
+    title="🔍 Feature Discovery Agent",
+    description="**Edward Jones · Data Engineering · Databricks Agent Bricks**\n\nDescribe your ML objective — I'll find relevant features from the feature store.",
+    examples=[
+        "I'm building a Trust Propensity Model. What features do we have?",
+        "Which features have data quality issues or missed freshness SLA?",
+        "What signals are missing for a wealth transfer model?",
+        "Find all advisor engagement features in the feature store",
+    ],
+    chatbot=gr.Chatbot(height=450),
+)
+
+port = int(os.environ.get("DATABRICKS_APP_PORT", 8080))
+log.info(f"Launching on port {port}")
+demo.launch(server_name="0.0.0.0", server_port=port)        neutral_hue="slate",
         font=gr.themes.GoogleFont("IBM Plex Mono"),
     ),
     css="""
