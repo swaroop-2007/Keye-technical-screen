@@ -1,42 +1,33 @@
 %%writefile /Workspace/Users/swaroop.udgaonkar@wipro.com/feature-agent-app/app.py
 
-import os
 import gradio as gr
-from openai import OpenAI
+import mlflow
+import os
+from langchain_core.messages import HumanMessage, AIMessage
 
-# ── Config ────────────────────────────────────────────────────────────────────
-# Databricks Apps auto-injects these — no hardcoding needed
-WORKSPACE_URL   = os.environ.get("DATABRICKS_HOST", "")
-TOKEN           = os.environ.get("DATABRICKS_TOKEN", "")
-ENDPOINT_NAME   = "feature-discovery-supervisor"   # ← your supervisor endpoint name
+# ── Load the registered agent from UC ────────────────────────────────────────
+# Databricks Apps injects DATABRICKS_HOST and DATABRICKS_TOKEN automatically
+mlflow.set_registry_uri("databricks-uc")
 
-# ── Client pointing to your Supervisor endpoint ───────────────────────────────
-client = OpenAI(
-    api_key=TOKEN,
-    base_url=f"{WORKSPACE_URL}/serving-endpoints"
+print("Loading agent from Unity Catalog...")
+agent = mlflow.pyfunc.load_model(
+    "models:/uc_wealthai_dev.feature_agent.feature_discovery_agent/3"
 )
+print("Agent loaded ✅")
 
 # ── Chat function ─────────────────────────────────────────────────────────────
 def chat(message, history):
-    response = None
+    """
+    Gradio passes history as list of [user, assistant] pairs.
+    We forward the latest message to the agent and return its response.
+    """
     try:
-        response = w.serving_endpoints.query(
-            name=ENDPOINT_NAME,
-            messages=[
-                ChatMessage(
-                    role=ChatMessageRole.USER,
-                    content=message
-                )
-            ]
-        )
-        # Response is a dict
-        if isinstance(response, dict):
-            return response["choices"][0]["message"]["content"]
-        else:
-            return response.choices[0].message.content
-
+        response = agent.predict({
+            "messages": [{"role": "user", "content": message}]
+        })
+        return response
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        return f"⚠️ Agent error: {str(e)}\n\nTry rephrasing your ML objective."
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 with gr.Blocks(
@@ -47,100 +38,88 @@ with gr.Blocks(
         font=gr.themes.GoogleFont("IBM Plex Mono"),
     ),
     css="""
-        .gradio-container { max-width: 960px !important; margin: auto; }
+        .gradio-container { max-width: 900px !important; margin: auto; }
+        .chat-message { font-size: 14px; }
         footer { display: none !important; }
-        #header-band {
-            background: #0B1A35;
-            border-bottom: 3px solid #00C2E0;
-            padding: 16px 24px;
-            margin-bottom: 16px;
-            border-radius: 8px;
+        #header { 
+            border-bottom: 1px solid #1e293b; 
+            padding-bottom: 16px; 
+            margin-bottom: 8px; 
         }
-        #tag {
+        #tag { 
             display: inline-block;
-            background: #00C2E0;
-            color: #060E1F;
+            background: #0ea5e9;
+            color: white;
             font-size: 10px;
-            font-weight: 800;
+            font-weight: bold;
             letter-spacing: 2px;
             padding: 3px 10px;
             border-radius: 3px;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
         }
     """
 ) as demo:
 
-    # ── Header ──
-    gr.HTML("""
-        <div id="header-band">
-            <div id="tag">EDWARD JONES · DATA ENGINEERING · DATABRICKS AGENT BRICKS</div>
-            <h2 style="color:#FFFFFF; margin:0; font-size:22px;">
-                🔍 Feature Discovery Agent
-            </h2>
-            <p style="color:#94A3B8; margin:4px 0 0 0; font-size:13px;">
-                Describe your ML objective in plain English — powered by Supervisor Agent, 
-                Knowledge Assistant, Genie Space & Vector Search
-            </p>
-        </div>
-    """)
+    with gr.Row(elem_id="header"):
+        with gr.Column():
+            gr.HTML('<div id="tag">EDWARD JONES · DATA ENGINEERING</div>')
+            gr.Markdown("# 🔍 Feature Discovery Agent")
+            gr.Markdown(
+                "Describe your ML objective in plain English. "
+                "I'll search the **Unity Catalog feature store** and return "
+                "ranked features with source tables and relevance scores."
+            )
 
     with gr.Row():
-
-        # ── Main chat ──
         with gr.Column(scale=3):
             chatbot = gr.ChatInterface(
                 fn=chat,
                 chatbot=gr.Chatbot(
-                    height=480,
+                    height=460,
                     show_label=False,
-                    placeholder="Ask me what features are available for your ML model...",
-                    render_markdown=True,
+                    placeholder="Ask me what features are available for your model...",
+                    elem_classes=["chat-message"]
                 ),
                 textbox=gr.Textbox(
                     placeholder="e.g. What features do we have for a trust propensity model?",
                     container=False,
+                    scale=7,
                     lines=2
                 ),
                 examples=[
-                    "I'm building a Trust Propensity Model for wealth transfer prediction. What features do we have?",
-                    "Which features have data quality issues or missed their freshness SLA?",
-                    "What signals would you expect for a trust propensity model that we don't currently have?",
-                    "Find all advisor engagement and relationship features in the feature store",
-                    "What features did the long-term care model use previously?",
+                    "What features do we have for predicting wealth transfer to a trust?",
+                    "I need features for a client churn model",
+                    "Find all advisor engagement features available in the feature store",
+                    "What portfolio and AUM features are available for a risk scoring model?",
+                    "Show me behavioral features updated in the last 30 days",
                 ],
                 retry_btn=None,
                 undo_btn=None,
-                clear_btn="🗑️  Clear chat",
+                clear_btn="🗑️  Clear",
             )
 
-        # ── Sidebar ──
-        with gr.Column(scale=1, min_width=220):
-            gr.Markdown("### 🤖 Agent Squad")
+        with gr.Column(scale=1, min_width=200):
+            gr.Markdown("### How to use")
             gr.Markdown("""
-**Supervisor**
-Routes your question to the right agent
+**1.** Type your ML objective in the box below
 
-**Knowledge Assistant**
-Feature definitions & lineage
+**2.** Agent searches the real feature store
 
-**Genie Space**
-Freshness, null rates & DQ metrics
+**3.** Get back ranked features with:
+- Column name
+- Source table path  
+- Relevance score
+- Signal gaps
 
-**UC Function**
-Semantic similarity ranking
+---
+**Tips:**
+- Be specific about the prediction target
+- Mention the entity (client, advisor, account)
+- Include time horizon if relevant
             """)
 
             gr.Markdown("---")
-            gr.Markdown("### 💡 Try asking")
-            gr.Markdown("""
-- *What features exist for wealth modeling?*
-- *Which features are stale today?*
-- *What signals are missing for my model?*
-- *Where does client_net_worth_band come from?*
-            """)
-
-            gr.Markdown("---")
-            gr.Markdown("### 📦 Feature Store")
+            gr.Markdown("### Feature Store")
             gr.Markdown("""
 `uc_wealthai_dev`
 - `ml_feature_store`
