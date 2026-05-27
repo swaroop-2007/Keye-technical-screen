@@ -33,7 +33,7 @@ def chat(message, history):
 demo = gr.ChatInterface(
     fn=chat,
     title="Feature Discovery Agent",
-    description="Edward Jones · Data Engineering · Databricks Agent Bricks",
+    description="Data Engineering · Databricks Agent Bricks",
     examples=[
         "I'm building a Trust Propensity Model. What features do we have?",
         "Which features have data quality issues?",
